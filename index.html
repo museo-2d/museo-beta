@@ -1,0 +1,543 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+
+  <style>
+    /* ── PDF VIEWER OVERLAY ── */
+    #pdfOverlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 1000;
+      background: rgba(5, 8, 20, 0.88);
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
+      align-items: center;
+      justify-content: center;
+    }
+    #pdfOverlay.active { display: flex; }
+
+    /* scanline retro texture over whole overlay */
+    #pdfOverlay::before {
+      content:'';
+      position:absolute;
+      inset:0;
+      background: repeating-linear-gradient(
+        to bottom,
+        transparent 0px,
+        transparent 3px,
+        rgba(0,0,0,0.18) 3px,
+        rgba(0,0,0,0.18) 4px
+      );
+      pointer-events: none;
+      z-index: 1;
+    }
+
+    #pdfViewer {
+      position: relative;
+      z-index: 2;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 18px;
+    }
+
+    /* retro pixel border frame */
+    #pdfFrame {
+      position: relative;
+      background: #0b0f1a;
+      border: 4px solid #00eaff;
+      box-shadow:
+        0 0 0 4px #0b0f1a,
+        0 0 0 8px #ffe600,
+        0 0 0 12px #0b0f1a,
+        0 0 0 16px #ff2d78,
+        0 0 24px 20px rgba(0,234,255,0.25);
+      image-rendering: pixelated;
+    }
+
+    #pdfCanvas {
+      display: block;
+      max-width: 78vw;
+      max-height: 72vh;
+      image-rendering: auto;
+    }
+
+    /* page-flip animation layers */
+    #flipOverlayLeft,
+    #flipOverlayRight {
+      position: absolute;
+      top: 0; bottom: 0;
+      width: 50%;
+      pointer-events: none;
+      z-index: 5;
+      background: linear-gradient(to right, rgba(0,234,255,0.08), transparent);
+      transform-origin: left center;
+      opacity: 0;
+    }
+    #flipOverlayRight {
+      left: auto; right: 0;
+      transform-origin: right center;
+      background: linear-gradient(to left, rgba(0,234,255,0.08), transparent);
+    }
+
+    /* ── CONTROLS ROW ── */
+    .pdf-controls {
+      display: flex;
+      align-items: center;
+      gap: 32px;
+    }
+
+    /* pixel-art retro buttons */
+    .retro-btn {
+      font-family: 'Press Start 2P', cursive;
+      font-size: 11px;
+      color: #0b0f1a;
+      background: #ffe600;
+      border: none;
+      cursor: pointer;
+      padding: 10px 18px;
+      position: relative;
+      image-rendering: pixelated;
+      /* pixel-art shadow = multi-layer box-shadow */
+      box-shadow:
+        4px 0 0 0 #b8a900,
+        0 4px 0 0 #b8a900,
+        4px 4px 0 0 #7a6f00,
+        -2px -2px 0 0 #fff176;
+      transition: transform 0.08s, box-shadow 0.08s;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+    .retro-btn:hover {
+      background: #fff176;
+      color: #0b0f1a;
+      transform: translate(-1px,-1px);
+      box-shadow:
+        5px 0 0 0 #b8a900,
+        0 5px 0 0 #b8a900,
+        5px 5px 0 0 #7a6f00,
+        -2px -2px 0 0 #fffde7;
+    }
+    .retro-btn:active {
+      transform: translate(2px,2px);
+      box-shadow:
+        2px 0 0 0 #b8a900,
+        0 2px 0 0 #b8a900,
+        2px 2px 0 0 #7a6f00;
+    }
+
+    /* ◄ PREV  ► NEXT  arrow pixel art */
+    #btnPrev::before { content: '◄ '; }
+    #btnNext::after  { content: ' ►'; }
+
+    /* page counter */
+    #pdfPageInfo {
+      font-family: 'Press Start 2P', cursive;
+      font-size: 10px;
+      color: #00eaff;
+      text-shadow: 0 0 8px #00eaff, 0 0 18px #00eaff;
+      min-width: 110px;
+      text-align: center;
+      letter-spacing: 2px;
+    }
+
+    /* ── CLOSE BUTTON top-right ── */
+    #btnClose {
+      position: absolute;
+      top: -18px;
+      right: -18px;
+      font-family: 'Press Start 2P', cursive;
+      font-size: 12px;
+      background: #ff2d78;
+      color: #fff;
+      border: none;
+      cursor: pointer;
+      width: 42px;
+      height: 42px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 10;
+      box-shadow:
+        4px 0 0 0 #8b0034,
+        0 4px 0 0 #8b0034,
+        4px 4px 0 0 #4a001c,
+        -2px -2px 0 0 #ff8fb3;
+      transition: transform 0.08s, background 0.1s;
+    }
+    #btnClose:hover {
+      background: #ff5fa0;
+      transform: scale(1.1);
+    }
+    #btnClose:active {
+      transform: translate(2px,2px);
+    }
+
+    /* Loading state */
+    #pdfLoading {
+      font-family: 'Press Start 2P', cursive;
+      font-size: 10px;
+      color: #ffe600;
+      text-shadow: 0 0 10px #ffe600;
+      animation: blink 1s step-end infinite;
+      padding: 40px;
+      letter-spacing: 2px;
+    }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+
+    /* flip keyframes */
+    @keyframes flipLeft {
+      0%   { opacity:0; transform: perspective(600px) rotateY(0deg); }
+      30%  { opacity:1; transform: perspective(600px) rotateY(-25deg); }
+      60%  { opacity:0.6; transform: perspective(600px) rotateY(-55deg); }
+      100% { opacity:0; transform: perspective(600px) rotateY(-90deg); }
+    }
+    @keyframes flipRight {
+      0%   { opacity:0; transform: perspective(600px) rotateY(0deg); }
+      30%  { opacity:1; transform: perspective(600px) rotateY(25deg); }
+      60%  { opacity:0.6; transform: perspective(600px) rotateY(55deg); }
+      100% { opacity:0; transform: perspective(600px) rotateY(90deg); }
+    }
+    .animFlipLeft  { animation: flipLeft  0.42s ease-in-out forwards; }
+    .animFlipRight { animation: flipRight 0.42s ease-in-out forwards; }
+
+    /* pixel corner decorations on frame */
+    #pdfFrame::before, #pdfFrame::after {
+      content:'';
+      position:absolute;
+      width:18px; height:18px;
+      background:#ffe600;
+      z-index:6;
+    }
+    #pdfFrame::before { top:-4px; left:-4px; }
+    #pdfFrame::after  { bottom:-4px; right:-4px; }
+  </style>
+</head>
+<body>
+
+<!-- PDF VIEWER OVERLAY -->
+<div id="pdfOverlay">
+  <div id="pdfViewer">
+    <div id="pdfFrame">
+      <button id="btnClose">✕</button>
+      <div id="pdfLoading">LOADING... ▌</div>
+      <canvas id="pdfCanvas" style="display:none;"></canvas>
+      <div id="flipOverlayLeft"></div>
+      <div id="flipOverlayRight"></div>
+    </div>
+    <div class="pdf-controls">
+      <button class="retro-btn" id="btnPrev">PREV</button>
+      <span id="pdfPageInfo">01 / ??</span>
+      <button class="retro-btn" id="btnNext">NEXT</button>
+    </div>
+  </div>
+</div>
+
+<div class="ui">
+  <div class="interactuar">
+      <img src="img/controles.png">
+  </div>
+</div>
+
+<div class="panelUI" id="infoBox">
+<h2 id="title"></h2>
+<p id="text"></p>
+</div>
+
+<div class="hud">
+  <div class="hearts">
+    <img src="img/corazon.png">
+    <img src="img/corazon.png">
+    <img src="img/corazon.png">
+  </div>
+
+  <div class="coins">
+    <img src="img/moneda.png">
+    <span>x 00</span>
+  </div>
+
+  <div class="keys">
+    <img src="img/llave.png">
+    <span>x 0/4</span>
+  </div>
+</div>
+
+<canvas id="game"></canvas>
+
+<script>
+// ══════════════════════════════════════════════
+//  PDF VIEWER  –  PDF.js powered
+// ══════════════════════════════════════════════
+pdfjsLib.GlobalWorkerOptions.workerSrc =
+  'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+let pdfDoc       = null;
+let pdfCurPage   = 1;
+let pdfRendering = false;
+let pdfAnimating = false;
+
+const overlay      = document.getElementById('pdfOverlay');
+const pdfCanvas    = document.getElementById('pdfCanvas');
+const pdfCtx       = pdfCanvas.getContext('2d');
+const pdfLoading   = document.getElementById('pdfLoading');
+const pageInfo     = document.getElementById('pdfPageInfo');
+const btnPrev      = document.getElementById('btnPrev');
+const btnNext      = document.getElementById('btnNext');
+const btnClose     = document.getElementById('btnClose');
+const flipL        = document.getElementById('flipOverlayLeft');
+const flipR        = document.getElementById('flipOverlayRight');
+
+function renderPage(num) {
+  if (pdfRendering) return;
+  pdfRendering = true;
+
+  pdfDoc.getPage(num).then(page => {
+    // scale to fit nicely inside 78vw / 72vh
+    const maxW = window.innerWidth  * 0.78;
+    const maxH = window.innerHeight * 0.72;
+    const vp0  = page.getViewport({ scale: 1 });
+    const scale = Math.min(maxW / vp0.width, maxH / vp0.height);
+    const vp   = page.getViewport({ scale });
+
+    pdfCanvas.width  = vp.width;
+    pdfCanvas.height = vp.height;
+
+    const renderCtx = { canvasContext: pdfCtx, viewport: vp };
+    page.render(renderCtx).promise.then(() => {
+      pdfRendering = false;
+      pdfLoading.style.display = 'none';
+      pdfCanvas.style.display  = 'block';
+      pageInfo.textContent =
+        String(pdfCurPage).padStart(2,'0') + ' / ' +
+        String(pdfDoc.numPages).padStart(2,'0');
+    });
+  });
+}
+
+function flipAndGo(direction) {
+  // direction: 'next' | 'prev'
+  if (pdfAnimating) return;
+  if (direction === 'next' && pdfCurPage >= pdfDoc.numPages) return;
+  if (direction === 'prev' && pdfCurPage <= 1) return;
+
+  pdfAnimating = true;
+  const el = direction === 'next' ? flipR : flipL;
+  const cls = direction === 'next' ? 'animFlipRight' : 'animFlipLeft';
+
+  el.classList.add(cls);
+  el.addEventListener('animationend', () => {
+    el.classList.remove(cls);
+    pdfAnimating = false;
+    pdfCurPage += direction === 'next' ? 1 : -1;
+    renderPage(pdfCurPage);
+  }, { once: true });
+}
+
+function openPdfViewer() {
+  overlay.classList.add('active');
+  // block game keyboard while overlay open
+  gameInputBlocked = true;
+
+  if (pdfDoc) { renderPage(pdfCurPage); return; }
+
+  pdfLoading.style.display = 'block';
+  pdfCanvas.style.display  = 'none';
+
+  pdfjsLib.getDocument('Manual_retro_branding.pdf').promise.then(doc => {
+    pdfDoc = doc;
+    renderPage(pdfCurPage);
+  }).catch(err => {
+    pdfLoading.textContent = 'ERROR AL CARGAR PDF';
+    console.error(err);
+  });
+}
+
+function closePdfViewer() {
+  overlay.classList.remove('active');
+  gameInputBlocked = false;
+}
+
+btnNext.addEventListener('click',  () => flipAndGo('next'));
+btnPrev.addEventListener('click',  () => flipAndGo('prev'));
+btnClose.addEventListener('click', closePdfViewer);
+
+// keyboard navigation while overlay open
+document.addEventListener('keydown', e => {
+  if (!overlay.classList.contains('active')) return;
+  if (e.code === 'ArrowRight') flipAndGo('next');
+  if (e.code === 'ArrowLeft')  flipAndGo('prev');
+  if (e.code === 'Escape')     closePdfViewer();
+});
+
+
+// ══════════════════════════════════════════════
+//  GAME ENGINE
+// ══════════════════════════════════════════════
+let gameInputBlocked = false;
+
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d', { alpha:false });
+
+canvas.width  = window.innerWidth;
+canvas.height = window.innerHeight;
+
+const worldWidth = 2600;
+
+const player = {
+  x: 100,
+  y: canvas.height - 260,
+  w: 95,
+  h: 110,
+  speed: 3.5,
+  frame: 0,
+  tick: 0
+};
+
+const idleR   = new Image(); idleR.src   = "img/Yeiko5.png";
+const idleL   = new Image(); idleL.src   = "img/Yeiko6.png";
+const spriteR1= new Image(); spriteR1.src= "img/Yeiko.png";
+const spriteR2= new Image(); spriteR2.src= "img/Yeiko2.png";
+const spriteL1= new Image(); spriteL1.src= "img/Yeiko3.png";
+const spriteL2= new Image(); spriteL2.src= "img/Yeiko4.png";
+
+player.direction = "right";
+const keys = {};
+let cameraX = 0;
+
+// MÓDULOS  –  el primero (x:150) abre el PDF
+const modules = [
+
+ {
+   x: 550,
+   img: "img/modulo1.png",
+   type: 'pdf',
+   title: '0 - Cartilla de Branding',
+   text: ''
+ },
+
+
+ {
+   x: 1050,
+   img: "img/modulo2.png",
+   title: '2 - Técnica',
+   text: 'Lorem ipsum dolor sit amet...'
+ },
+
+ {
+   x: 1550,
+   img: "img/modulo3.png",
+   title: '3 - La obra',
+   text: 'Lorem ipsum dolor sit amet...'
+ },
+
+ {
+   x: 2100,
+   img: "img/modulo4.png",
+   title: '4 - Impacto',
+   text: 'Lorem ipsum dolor sit amet...'
+ }
+
+];
+
+modules.forEach(m => {
+  const image = new Image();
+  image.src = m.img;
+  m.image = image;
+});
+
+const background   = new Image(); background.src   = "img/fondo.png";
+const floorTexture = new Image(); floorTexture.src = "img/suelo.png";
+
+function drawBackground(){
+  ctx.drawImage(background, -cameraX, -250, 2600, 1200);
+}
+
+function drawFloor(){
+  ctx.drawImage(floorTexture, -cameraX, canvas.height - 730, worldWidth, 1300);
+}
+
+function drawPlayer(){
+  player.tick++;
+  const moving = keys['ArrowRight'] || keys['ArrowLeft'];
+
+  if (moving && player.tick % 40 === 0)
+    player.frame = player.frame === 0 ? 1 : 0;
+
+  let sprite;
+  if (!moving) {
+    sprite = player.direction === "right" ? idleR : idleL;
+  } else if (player.direction === "right") {
+    sprite = player.frame === 0 ? spriteR1 : spriteR2;
+  } else {
+    sprite = player.frame === 0 ? spriteL1 : spriteL2;
+  }
+
+  ctx.drawImage(sprite, player.x - cameraX, player.y, player.w, player.h);
+}
+
+function drawModules(){
+  modules.forEach(m => {
+    ctx.drawImage(m.image, m.x - cameraX, canvas.height - 550, 250, 400);
+  });
+}
+
+function update(){
+  if (gameInputBlocked) return; // freeze player while PDF open
+
+  if (keys['ArrowRight']) { player.x += player.speed; player.direction = "right"; }
+  if (keys['ArrowLeft'])  { player.x -= player.speed; player.direction = "left";  }
+
+  if (player.x < 0) player.x = 0;
+  if (player.x > worldWidth - player.w) player.x = worldWidth - player.w;
+
+  cameraX = player.x - canvas.width / 2;
+  if (cameraX < 0) cameraX = 0;
+  if (cameraX > worldWidth - canvas.width) cameraX = worldWidth - canvas.width;
+}
+
+function interact(){
+  if (gameInputBlocked) return;
+  modules.forEach(m => {
+    if (player.x < m.x + 120 && player.x + player.w > m.x) {
+      if (m.type === 'pdf') {
+        // hide the old panel and open PDF viewer
+        document.getElementById('infoBox').style.display = 'none';
+        openPdfViewer();
+      } else {
+        document.getElementById('title').innerText = m.title;
+        document.getElementById('text').innerText  = m.text;
+        document.getElementById('infoBox').style.display = 'block';
+      }
+    }
+  });
+}
+
+function gameLoop(){
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  drawBackground();
+  drawFloor();
+  drawModules();
+  drawPlayer();
+  update();
+  requestAnimationFrame(gameLoop);
+}
+
+window.addEventListener('keydown', e => {
+  keys[e.code] = true;
+  if (e.code === 'Space') interact();
+});
+window.addEventListener('keyup', e => keys[e.code] = false);
+
+gameLoop();
+</script>
+
+</body>
+</html>

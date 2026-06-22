@@ -1,0 +1,72 @@
+body {
+  margin: 0;
+  overflow: hidden;
+  background: #0b0f1a;
+  font-family: 'Press Start 2P', cursive;
+}
+
+canvas {
+  display: block;
+}
+
+/* CONTROLES */
+.ui {
+  position: absolute;
+  top: 20px;
+  left: 1400px;
+  color: white;
+  z-index: 10;
+}
+
+/* PANEL INFO */
+.panelUI {
+  position: absolute;
+  bottom: 30px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0,0,0,0.8);
+  padding: 20px;
+  border-radius: 10px;
+  display: none;
+  color: white;
+  text-align: center;
+  max-width: 400px;
+  z-index: 10;
+}
+
+/* HUD */
+.hud {
+  position: absolute;
+  top: 20px;
+  left: 20px;
+  z-index: 20;
+  color: white;
+}
+
+.hud div {
+  display: flex;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.hud img {
+  width: 28px;
+  height: 28px;
+  margin-right: 8px;
+}
+
+.ui{
+    position: flex;
+    top: 4px;
+    right: -95px;
+}
+
+.ui img{
+    width: 200px;
+}
+
+.interactuar{
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
